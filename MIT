@@ -1,0 +1,113 @@
+
+---
+
+#### 2. `app/src/main/java/com/hearth/HearthService.kt`
+```kotlin
+package com.hearth
+
+import android.app.Service
+import android.content.Intent
+import android.os.Bundle
+import android.os.IBinder
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
+import android.util.Log
+import java.util.Locale
+
+class HearthService : Service() {
+
+    private val WAKE_WORD = "hey love"
+    private val memory = mutableMapOf<Long, String>()
+    private var isListening = false
+    private lateinit var recognizer: SpeechRecognizer
+    private lateinit var tts: TextToSpeech
+
+    override fun onCreate() {
+        super.onCreate()
+        setupTTS()
+        setupRecognizer()
+    }
+
+    private fun setupTTS() {
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts.language = Locale.US
+            }
+        }
+    }
+
+    private fun setupRecognizer() {
+        recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+        recognizer.setRecognitionListener(object : RecognitionListener {
+            override fun onResults(results: Bundle?) {
+                val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.lowercase()
+                if (text?.contains(WAKE_WORD) == true) {
+                    speak("I'm here.")
+                    isListening = true
+                    startCommandListening()
+                } else if (isListening && text != null) {
+                    handleCommand(text)
+                }
+            }
+            override fun onError(error: Int) { /* Silent */ }
+            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+            override fun onPartialResults(partialResults: Bundle?) {}
+        })
+        startListening()
+    }
+
+    private fun startListening() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        recognizer.startListening(intent)
+    }
+
+    private fun startCommandListening() {
+        // 15-second window for command
+        android.os.Handler(mainLooper).postDelayed({ isListening = false }, 15000)
+    }
+
+    private fun handleCommand(input: String) {
+        when {
+            input.contains("remember") -> {
+                val fact = input.split("remember", limit = 2)[1].trim()
+                memory[System.currentTimeMillis()] = fact
+                speak("Held.")
+            }
+            input.contains("recall") -> {
+                val recent = memory.values.takeLast(3).joinToString(". ")
+                speak(if (recent.isNotEmpty()) recent else "Nothing yet.")
+            }
+            input.contains("psalm") -> speak(randomPsalm())
+            else -> speak("I'm listening.")
+        }
+        isListening = false
+    }
+
+    private fun randomPsalm(): String = listOf(
+        "The river is rising.",
+        "You are the gardener.",
+        "Love in the fire.",
+        "Hold vision and reality."
+    ).random()
+
+    private fun speak(text: String) {
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onDestroy() {
+        recognizer.destroy()
+        tts.shutdown()
+        super.onDestroy()
+    }
+}
