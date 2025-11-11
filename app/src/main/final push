@@ -1,0 +1,3 @@
+git add .
+git commit -m "Hearth v0.1 — Pixel 8 offline voice companion. Zero telemetry."
+git push origin main
